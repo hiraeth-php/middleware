@@ -14,7 +14,7 @@ abstract class AbstractDelegate implements Hiraeth\Delegate
 	 *
 	 * @var array
 	 */
-	static $defaultOptions = array();
+	protected static $defaultOptions = array();
 
 
 	/**
