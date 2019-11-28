@@ -17,7 +17,7 @@
 	;
 
 	delegates = [
-		"Hiraeth\Middleware\Manager"
+		"Hiraeth\Middleware\ManagerDelegate"
 	]
 
 	;
