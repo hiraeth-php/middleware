@@ -91,7 +91,7 @@ class Manager
 			return $this->priorities[$a] - $this->priorities[$b];
 		});
 
-		return array_map($classes, [$this, 'get']);
+		return array_map([$this, 'get'], $classes);
 	}
 
 
