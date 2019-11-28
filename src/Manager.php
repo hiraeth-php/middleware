@@ -87,7 +87,7 @@ class Manager
 	{
 		$classes = array_keys($this->priorities);
 
-		uksort($classes, function($a, $b) {
+		uasort($classes, function($a, $b) {
 			return $this->priorities[$a] - $this->priorities[$b];
 		});
 
