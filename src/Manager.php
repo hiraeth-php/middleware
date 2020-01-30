@@ -27,19 +27,19 @@ class Manager
 
 
 	/**
-	 * Options for middleware keyed by class
+	 * Directors and related information keyed by class
 	 *
 	 * @var array
 	 */
-	protected $options = array();
+	protected $directors = array();
 
 
 	/**
-	 * Priorities for middleware keyed by class
+	 * Middleware and related information keyed by class
 	 *
 	 * @var array
 	 */
-	protected $priorities = array();
+	protected $middleware = array();
 
 
 	/**
@@ -52,31 +52,61 @@ class Manager
 
 
 	/**
-	 * Get a single lazy loading middleware
-	 *
-	 * @var
+	 * Register a director with priority and options
 	 */
-	public function get(string $class): Middleware
+	public function addDirector($director, int $priority = 50, array $options = array()): Manager
 	{
-		return new class($this->container, $class) implements Middleware {
-			protected $container = NULL;
-			protected $class = NULL;
+		if (is_object($director)) {
+			$class  = get_class($director);
+			$object = $director;
 
-			public function __construct($container, $class)
-			{
-				$this->container = $container;
-				$this->class     = $class;
-			}
+		} elseif (class_exists($director)) {
+			$class  = $director;
+			$object = NULL;
 
-			public function process(Request $request, Handler $handler): Response
-			{
-				$middleware = $this->container
-					? $this->container->get($this->class)
-					: new $this->class;
+		} else {
+			throw new InvalidArgumentException(sprintf(
+				'Cannot register director "%s", must be director object or class name',
+				$director
+			));
+		}
 
-				return $middleware->process($request, $handler);
-			}
-		};
+		$this->directors[$class] = [
+			'priority' => $priority,
+			'options'  => $options,
+			'object'   => $object
+		];
+
+		return $this;
+	}
+
+
+	/**
+	 * Register a middleware with priority and options
+	 */
+	public function addMiddleware($middleware, int $priority = 50, array $options = array()): Manager
+	{
+		if (is_object($middleware)) {
+			$class  = get_class($middleware);
+			$object = $middleware;
+		} elseif (class_exists($middleware)) {
+			$class  = $middleware;
+			$object = NULL;
+		} else {
+			throw new InvalidArgumentException(sprintf(
+				'Cannot register middleware "%s", must be middleware object or class name',
+				$middleware
+			));
+		}
+
+		$this->middleware[$class] = [
+			'active'   => TRUE,
+			'priority' => $priority,
+			'options'  => $options,
+			'object'   => $object
+		];
+
+		return $this;
 	}
 
 
@@ -85,13 +115,24 @@ class Manager
 	 */
 	public function getAll(): array
 	{
-		$classes = array_keys($this->priorities);
-
-		uasort($classes, function($a, $b) {
-			return $this->priorities[$a] - $this->priorities[$b];
+		uasort($this->directors, function ($a, $b) {
+			return $a['priority'] - $b['priority'];
 		});
 
-		return array_map([$this, 'get'], $classes);
+		uasort($this->middleware, function($a, $b) {
+			return $a['priority'] - $b['priority'];
+		});
+
+		return array_map([$this, 'proxy'], array_keys($this->middleware));
+	}
+
+
+	/**
+	 *
+	 */
+	public function getContainer(): ?Container
+	{
+		return $this->container;
 	}
 
 
@@ -100,8 +141,8 @@ class Manager
 	 */
 	public function getOptions(string $class, array $defaults = array()): array
 	{
-		if (isset($this->options[$class])) {
-			return $this->options[$class] + $defaults;
+		if (isset($this->middleware[$class])) {
+			return $this->middleware[$class]['options'] + $defaults;
 		}
 
 		return $defaults;
@@ -109,20 +150,98 @@ class Manager
 
 
 	/**
-	 * Register a middleware with priority and options
+	 *
 	 */
-	public function register(string $class, int $priority = 50, array $options = array()): Manager
+	public function getPriority(string $class): int
 	{
-		if (!in_array(Middleware::class, class_implements($class))) {
-			throw new InvalidArgumentException(sprintf(
-				'Cannot register middleware "%s", does not implement middleware interface',
-				$class
-			));
+		if (isset($this->middleware[$class])) {
+			return $this->middleware[$class]['priority'];
 		}
 
-		$this->priorities[$class] = $priority;
-		$this->options[$class]    = $options;
+		return 50;
+	}
 
-		return $this;
+
+	/**
+	 *
+	 */
+	public function isActive(Request $request, string $class): bool
+	{
+		foreach (array_keys($this->directors) as $director) {
+			if (!$this->resolveDirector($director)->check($request, $this, $class)) {
+				return FALSE;
+			}
+		}
+
+		return TRUE;
+	}
+
+
+	/**
+	 * Get a single lazy loading middleware
+	 *
+	 * @var
+	 */
+	public function proxy(string $class): Middleware
+	{
+		return new class ($class, $this) implements Middleware
+		{
+			protected $class     = NULL;
+			protected $manager   = NULL;
+
+			public function __construct(string $class, Manager $manager)
+			{
+				$this->class     = $class;
+				$this->manager   = $manager;
+			}
+
+			public function process(Request $request, Handler $handler): Response
+			{
+				if (!$this->manager->isActive($request, $this->class)) {
+					return $handler->handle($request);
+				}
+
+				return $this->manager->resolveMiddleware($this->class)->process($request, $handler);
+			}
+		};
+	}
+
+
+	/**
+	 *
+	 */
+	public function resolveDirector(string $class): Director
+	{
+		if (isset($this->directors[$class]['object'])) {
+			return $this->directors[$class]['object'];
+		} else {
+			return $this->resolve($class);
+		}
+	}
+
+
+	/**
+	 *
+	 */
+	public function resolveMiddleware(string $class): Middleware
+	{
+		if (isset($this->middleware[$class]['object'])) {
+			return $this->middleware[$class]['object'];
+		} else {
+			return $this->resolve($class);
+		}
+	}
+
+
+	/**
+	 *
+	 */
+	protected function resolve(string $class): object
+	{
+		if (isset($this->container)) {
+			return $this->container->get($class);
+		} else {
+			return new $class();
+		}
 	}
 }

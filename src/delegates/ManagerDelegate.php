@@ -36,17 +36,27 @@ class ManagerDelegate implements Hiraeth\Delegate
 	 */
 	public function __invoke(Hiraeth\Application $app): object
 	{
-		$configs  = $app->getConfig('*', 'middleware', static::$defaultConfig);
-		$instance = new Manager($app);
+		$middleware = $app->getConfig('*', 'middleware', static::$defaultConfig);
+		$directors  = $app->getConfig('*', 'director', static::$defaultConfig);
+		$instance   = new Manager($app);
 
-		foreach ($configs as $config) {
+		foreach ($middleware as $config) {
 			if (!$config['class'] || $config['disabled']) {
 				continue;
 			}
 
-			$instance->register($config['class'], $config['priority'], $config['options']);
+			$instance->addMiddleware($config['class'], $config['priority'], $config['options']);
 		}
 
-		return $instance;
+
+		foreach ($directors as $config) {
+			if (!$config['class'] || $config['disabled']) {
+				continue;
+			}
+
+			$instance->addDirector($config['class'], $config['priority'], $config['options']);
+		}
+
+		return $app->share($instance);
 	}
 }
