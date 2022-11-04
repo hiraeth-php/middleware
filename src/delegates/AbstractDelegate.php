@@ -12,7 +12,7 @@ abstract class AbstractDelegate implements Hiraeth\Delegate
 	/**
 	 * Default options for the middleware
 	 *
-	 * @var array
+	 * @var array<string, mixed>
 	 */
 	protected static $defaultOptions = array();
 
@@ -22,7 +22,7 @@ abstract class AbstractDelegate implements Hiraeth\Delegate
 	 *
 	 * @var Manager
 	 */
-	protected $manager = NULL;
+	protected $manager;
 
 
 	/**
@@ -36,8 +36,10 @@ abstract class AbstractDelegate implements Hiraeth\Delegate
 
 	/**
 	 * Get the options for the mdidleware
+	 *
+	 * @return array<string, mixed>
 	 */
-	public function getOptions()
+	public function getOptions(): array
 	{
 		return $this->manager->getOptions(static::getClass(), static::$defaultOptions);
 	}

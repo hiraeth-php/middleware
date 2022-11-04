@@ -12,7 +12,7 @@ class ManagerDelegate implements Hiraeth\Delegate
 	/**
 	 * Default configuration for a middleware
 	 *
-	 * @var array
+	 * @var array<string, mixed>
 	 */
 	static $defaultConfig = [
 		'class'    => NULL,

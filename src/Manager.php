@@ -11,6 +11,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Message\ResponseInterface as Response;
 
 use Psr\Container\ContainerInterface as Container;
+use RuntimeException;
 
 /**
  * The middleware manager is responsible for aggregating middleware and their options and providing
@@ -21,7 +22,7 @@ class Manager
 	/**
 	 * The PSr-11 container used to instantiate middleware
 	 *
-	 * @var Container
+	 * @var Container|null
 	 */
 	protected $container = NULL;
 
@@ -29,7 +30,7 @@ class Manager
 	/**
 	 * Directors and related information keyed by class
 	 *
-	 * @var array
+	 * @var array<class-string, mixed>
 	 */
 	protected $directors = array();
 
@@ -37,7 +38,7 @@ class Manager
 	/**
 	 * Middleware and related information keyed by class
 	 *
-	 * @var array
+	 * @var array<class-string, mixed>
 	 */
 	protected $middleware = array();
 
@@ -45,7 +46,7 @@ class Manager
 	/**
 	 * Create a new instance of the manager
 	 */
-	public function __construct(Container $container = NULL)
+	public function __construct(?Container $container = NULL)
 	{
 		$this->container = $container;
 	}
@@ -53,6 +54,9 @@ class Manager
 
 	/**
 	 * Register a director with priority and options
+	 *
+	 * @param object|class-string $director
+	 * @param array<class-string, mixed> $options
 	 */
 	public function addDirector($director, int $priority = 50, array $options = array()): Manager
 	{
@@ -83,6 +87,9 @@ class Manager
 
 	/**
 	 * Register a middleware with priority and options
+	 *
+	 * @param object|class-string $middleware
+	 * @param array<class-string, mixed> $options
 	 */
 	public function addMiddleware($middleware, int $priority = 50, array $options = array()): Manager
 	{
@@ -112,6 +119,8 @@ class Manager
 
 	/**
 	 * Get all lazy loading middleware for registered middlewares
+	 *
+	 * @return array<int, Middleware>
 	 */
 	public function getAll(): array
 	{
@@ -123,7 +132,12 @@ class Manager
 			return $a['priority'] - $b['priority'];
 		});
 
-		return array_map([$this, 'proxy'], array_keys($this->middleware));
+		return array_map(
+			function ($class) {
+				return $this->proxy($class);
+			},
+			array_keys($this->middleware)
+		);
 	}
 
 
@@ -138,6 +152,9 @@ class Manager
 
 	/**
 	 * Get the options for a middleware
+	 *
+	 * @param array<string, mixed> $defaults
+	 * @return array<string, mixed>
 	 */
 	public function getOptions(string $class, array $defaults = array()): array
 	{
@@ -180,21 +197,34 @@ class Manager
 	/**
 	 * Get a single lazy loading middleware
 	 *
-	 * @var
+	 * @param class-string $class
 	 */
 	public function proxy(string $class): Middleware
 	{
 		return new class ($class, $this) implements Middleware
 		{
-			protected $class     = NULL;
-			protected $manager   = NULL;
+			/**
+			 * @var class-string
+			 */
+			protected $class;
 
+			/**
+			 * @var Manager
+			 */
+			protected $manager;
+
+			/**
+			 * @param class-string $class
+			 */
 			public function __construct(string $class, Manager $manager)
 			{
 				$this->class     = $class;
 				$this->manager   = $manager;
 			}
 
+			/**
+			 *
+			 */
 			public function process(Request $request, Handler $handler): Response
 			{
 				if (!$this->manager->isActive($request, $this->class)) {
@@ -208,28 +238,42 @@ class Manager
 
 
 	/**
-	 *
+	 * @param class-string $class
 	 */
 	public function resolveDirector(string $class): Director
 	{
-		if (isset($this->directors[$class]['object'])) {
-			return $this->directors[$class]['object'];
-		} else {
-			return $this->resolve($class);
+		if (!isset($this->directors[$class]['object'])) {
+			$this->directors[$class]['object'] = $this->resolve($class);
 		}
+
+		if (!$this->directors[$class]['object'] instanceof Director) {
+			throw new RuntimeException(sprintf(
+				'Registered or resolved object for director %s is not actually a director',
+				$class
+			));
+		}
+
+		return $this->directors[$class]['object'];
 	}
 
 
 	/**
-	 *
+	 * @param class-string $class
 	 */
 	public function resolveMiddleware(string $class): Middleware
 	{
-		if (isset($this->middleware[$class]['object'])) {
-			return $this->middleware[$class]['object'];
-		} else {
-			return $this->resolve($class);
+		if (!isset($this->middleware[$class]['object'])) {
+			$this->middleware[$class]['object'] = $this->resolve($class);
 		}
+
+		if (!$this->middleware[$class]['object'] instanceof Middleware) {
+			throw new RuntimeException(sprintf(
+				'Registered or resolved object for middleware %s is not actually middlware',
+				$class
+			));
+		}
+
+		return $this->middleware[$class]['object'];
 	}
 
 
